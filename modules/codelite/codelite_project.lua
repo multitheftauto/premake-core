@@ -124,7 +124,6 @@
 			end,
 			-- source files are handled at the leaves
 			onleaf = function(node, depth)
-
 				local excludesFromBuild = {}
 				for cfg in project.eachconfig(prj) do
 					local cfgname = codelite.cfgname(cfg)
@@ -140,7 +139,7 @@
 					_p(depth, '<File Name="%s"/>', node.relpath)
 				end
 			end,
-		}, false, 1)
+		}, true)
 	end
 
 	function m.dependencies(prj)
@@ -224,6 +223,9 @@
 
 		_x(3, '<Linker Required="yes" Options="%s">', table.concat(flags, ";"))
 
+		for _, libdir in ipairs(cfg.libdirs) do
+			_p(4, '<LibraryPath Value="%s"/>', project.getrelative(cfg.project, libdir))
+		end
 		_p(3, '</Linker>')
 	end
 
@@ -265,15 +267,27 @@
 		local pauseexec  = iif(prj.kind == "ConsoleApp", "yes", "no")
 		local isguiprogram = iif(prj.kind == "WindowedApp", "yes", "no")
 		local isenabled  = iif(cfg.flags.ExcludeFromBuild, "no", "yes")
+		local ldPath = ''
 
-		_x(3, '<General OutputFile="%s" IntermediateDirectory="%s" Command="%s" CommandArguments="%s" UseSeparateDebugArgs="%s" DebugArguments="%s" WorkingDirectory="%s" PauseExecWhenProcTerminates="%s" IsGUIProgram="%s" IsEnabled="%s"/>',
-			targetname, objdir, command, cmdargs, useseparatedebugargs, debugargs, workingdir, pauseexec, isguiprogram, isenabled)
+		for _, libdir in ipairs(cfg.libdirs) do
+			ldPath = ldPath .. ":" .. project.getrelative(cfg.project, libdir)
+		end
+
+		if ldPath == nil or ldPath == '' then
+			_x(3, '<General OutputFile="%s" IntermediateDirectory="%s" Command="%s" CommandArguments="%s" UseSeparateDebugArgs="%s" DebugArguments="%s" WorkingDirectory="%s" PauseExecWhenProcTerminates="%s" IsGUIProgram="%s" IsEnabled="%s"/>',
+				targetname, objdir, command, cmdargs, useseparatedebugargs, debugargs, workingdir, pauseexec, isguiprogram, isenabled)
+		else
+			ldPath = string.sub(ldPath, 2)
+			_x(3, '<General OutputFile="%s" IntermediateDirectory="%s" Command="LD_LIBRARY_PATH=%s %s" CommandArguments="%s" UseSeparateDebugArgs="%s" DebugArguments="%s" WorkingDirectory="%s" PauseExecWhenProcTerminates="%s" IsGUIProgram="%s" IsEnabled="%s"/>',
+ 				targetname, objdir, ldPath, command, cmdargs, useseparatedebugargs, debugargs, workingdir, pauseexec, isguiprogram, isenabled)
+		end
 	end
 
 	function m.environment(cfg)
+		local envs = table.concat(cfg.debugenvs, "\n")
+
 		_p(3, '<Environment EnvVarSetName="&lt;Use Defaults&gt;" DbgSetName="&lt;Use Defaults&gt;">')
-		local variables = ""
-		_x(4, '<![CDATA[%s]]>', variables)
+		_x(4, '<![CDATA[%s]]>', envs)
 		_p(3, '</Environment>')
 	end
 
@@ -301,9 +315,10 @@
 	function m.preBuild(cfg)
 		if #cfg.prebuildcommands > 0 then
 			_p(3, '<PreBuild>')
-			for _, commands in ipairs(cfg.prebuildcommands) do
+			local commands = os.translateCommandsAndPaths(cfg.prebuildcommands, cfg.project.basedir, cfg.project.location)
+			for _, command in ipairs(commands) do
 				_x(4, '<Command Enabled="yes">%s</Command>',
-				p.esc(commands))
+				p.esc(command))
 			end
 			_p(3, '</PreBuild>')
 		end
@@ -312,9 +327,10 @@
 	function m.postBuild(cfg)
 		if #cfg.postbuildcommands > 0 then
 			_p(3, '<PostBuild>')
-			for _, commands in ipairs(cfg.postbuildcommands) do
+			local commands = os.translateCommandsAndPaths(cfg.postbuildcommands, cfg.project.basedir, cfg.project.location)
+			for _, command in ipairs(commands) do
 				_x(4, '<Command Enabled="yes">%s</Command>',
-				p.esc(commands))
+				p.esc(command))
 			end
 			_p(3, '</PostBuild>')
 		end
@@ -355,11 +371,11 @@
 	end
 
 	function m.isCpp11(cfg)
-		return (cfg.cppdialect == 'gnu++11') or (cfg.cppdialect == 'C++11')
+		return (cfg.cppdialect == 'gnu++11') or (cfg.cppdialect == 'C++11') or (cfg.cppdialect == 'gnu++0x') or (cfg.cppdialect == 'C++0x')
 	end
 
 	function m.isCpp14(cfg)
-		return (cfg.cppdialect == 'gnu++14') or (cfg.cppdialect == 'C++14')
+		return (cfg.cppdialect == 'gnu++14') or (cfg.cppdialect == 'C++14') or (cfg.cppdialect == 'gnu++1y') or (cfg.cppdialect == 'C++1y')
 	end
 
 	function m.completion(cfg)
